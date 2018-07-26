@@ -1,0 +1,17 @@
+bam2fastq :
+  inputFile : "sample_40X_1.bam"
+
+coverage : ["1", "2"]
+
+replicat : [1, 2] 
+
+subsampling : 
+  refSize : "4.1m"
+
+canu :
+  genSize : "4086189"
+  techno : "-pacbio-raw"
+
+quast : 
+  refFile : "NC_002929_Bpertussis.fasta"
+

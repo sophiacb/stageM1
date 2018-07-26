@@ -1,0 +1,20 @@
+DATASET=["sample_20X"]
+a,b = DATASET[0].split("_")
+cov = int(b[0:-1]) 
+
+
+rule all : 
+        input : expand("subsampling_{dataset}/fastqFile/{dataset}_{replicat}.fastq", dataset=DATASET, replicat=[1,2])
+
+rule subsampling :
+        input : "sample_40X_1.bam"
+        output : "subsampling_{dataset}/{dataset}_{replicat}.bam"
+        run :
+                from sequana import pacbio
+                b = pacbio.BAMPacbio(input[0])
+                b.random_selection(output_filename = output[0], reference_length=4086189, expected_coverage=cov)
+
+rule bam2fastq: 
+        input : "subsampling_{dataset}/{dataset}_{replicat}.bam"
+        output : "subsampling_{dataset}/fastqFile/{dataset}_{replicat}.fastq"
+        shell :  "bioconvert {input} {output}"

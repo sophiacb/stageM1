@@ -1,0 +1,139 @@
+#ASSEMBLY PIPELINE
+
+configfile: "config.yaml"
+
+rule all :
+    input :        
+        expand("subsampling_{coverage}X/fastqFile/{coverage}X_{replicat}.fastq", coverage=config["coverage"], replicat=config["replicat"]),
+        expand ("subsampling_{coverage}X/quast/{coverage}X_{replicat}/", coverage=config["coverage"], replicat=config["replicat"]),
+        "nb_contigs.png", 
+        "mismatches.png", 
+        "indels.png", 
+        "genomeFraction.png"
+
+rule subsampling :
+        input : config["bam2fastq"]["inputFile"]
+        output : "subsampling_{coverage}X/bamFile/{coverage}X_{replicat}.bam"
+        run :
+            cov = {coverage}
+            from sequana import pacbio
+            b = pacbio.BAMPacbio(input[0])
+            b.random_selection(output_filename = output[0], reference_length=config["subsampling"]["refSize"], expected_coverage=cov)
+
+rule bam2fastq :
+        input : "subsampling_{coverage}X/bamFile/{coverage}X_{replicat}.bam"
+        output : "subsampling_{coverage}X/fastqFile/{coverage}X_{replicat}.fastq"
+        shell :  """bioconvert {input} {output}"""
+
+rule canu :
+        input : "subsampling_{coverage}X/fastqFile/{coverage}X_{replicat}.fastq"
+        output :  "subsampling_{coverage}X/canu/{coverage}X_{replicat}.contigs.fasta"
+        params :
+                prefix = "{coverage}X_{replicat}",
+                #genSize = "4086189",
+                #techno = "-pacbio-raw"
+        shell : """canu -d {params.prefix} -p {params.prefix} genomeSize=config["canu"]["genSize"] config["canu"]["techno"] {output}"""
+
+rule quast : 
+        input : "subsampling_{coverage}X/canu/{coverage}X_{replicat}.contigs.fasta"
+        output : "subsampling_{coverage}X/quast/{coverage}X_{replicat}/"
+        shell : """python ../quast/quast-4.6.3/quast.py -o {output} -R config["quast"]["refFile"] {input}"""
+
+import glob
+def getContig(n):
+    files =  (glob.glob(n))
+    print (files)
+    return files
+
+def getCov(n):
+    cov = n[12:13]
+    return cov
+
+def getQuastReport(n):
+    files =  (glob.glob(n))
+    print (files)
+    return files
+
+
+rule plot_contig :
+    input : 
+        getContig('subsampling_*/canu/*.contigs.fasta')
+    output : 
+        "nb_contigs.png"
+    run :
+        ncov = len(config["coverage"])
+        tabcontigs = [[]] * ncov
+        for file in input : 
+            cov = getCov(file)
+            from sequana import FastA
+            ff = FastA(file)
+            ncontig = len(ff)
+            ind = config["coverage"].index(cov)
+            tabcontigs[ind].append(ncontig)
+	    print (tabcontigs)
+        with open("contigs.txt", "w") as fh:
+            fh.write(str(tabcontigs))
+        import pylab as pb
+        import matplotlib.pyplot as plt
+        plt.boxplot(tabcontigs)
+        BoxName = config["coverage"]
+        pb.xticks([1, 2], BoxName)
+        plt.axhline(y=1, color='lightgreen', linestyle='-', linewidth=0.7)
+        plt.title('Distribution of number of contigs by coverage (X) - B.pertussis')
+        plt.ylabel('# contigs')
+        plt.xlabel('Coverage (X)')
+        plt.savefig('nb_contigs.png')
+
+rule plot_quast :
+    input : 
+        getQuastReport('subsampling_*/quast/*/report.txt') 
+    output : 
+        "mismatches.png", 
+        "indels.png", 
+        "genomeFraction.png"
+    run :
+        ncov = len(config["coverage"])
+        mis = [[]] * ncov
+        ind = [[]] * ncov
+        gen = [[]] * ncov
+        for fileReport in input : 
+            cov = getCov(fileReport)
+            with open(fileReport, "r") as f :
+                for line in f :
+                    index = config["coverage"].index(cov)
+                    mismatches = re.search(r'mismatches\sper\s100\skbp(.*)', line, re.M|re.I)
+                    if mismatches is not None : 
+                        mis[index].append(float(mismatches.group(1)))
+                        print("MISMATCHES {0}".format(mis))
+                    indels = re.search(r'indels\sper\s100\skbp(.*)', line, re.M|re.I)
+                    if indels is not None : 
+                        ind[index].append(float(indels.group(1)))
+                        print("INDELS {0}".format(ind))
+                    genFrac = re.search(r'Genome\sfraction\s\(%\)(.*)', line, re.M|re.I)
+                    if genFrac is not None : 
+                        gen[index].append(float(genFrac.group(1)))
+                        print("GENOME FRACTION {0}".format(gen))
+        import pylab as pb
+        import matplotlib.pyplot as plt
+        plt.boxplot(mis)
+        BoxName = config["coverage"]
+        pb.xticks([1, 2], BoxName)
+        plt.title('Distribution of mismatches per 100kbp by coverage (X) - B.pertussis')
+        plt.ylabel('mismatches per 100kbp')
+        plt.xlabel('Coverage (X)')
+        plt.savefig('mismatches.png')
+        pb.clf()
+        plt.boxplot(ind)
+        plt.title('Distribution of indels per 100kbp by coverage (X) - B.pertussis')
+        plt.ylabel('indels per 100kbp')
+        plt.xlabel('Coverage (X)')
+        plt.savefig('indels.png')
+        pb.clf()
+        plt.boxplot(gen)
+        plt.title('Distribution of genome fraction retrieved by coverage (X) - B.pertussis')
+        plt.axhline(y=100, color='lightgreen', linestyle='-', linewidth=0.7)
+        plt.ylabel('genome fraction retrieved')
+        plt.xlabel('Coverage (X)')
+        plt.savefig('genomeFraction.png')
+
+        

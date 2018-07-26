@@ -1,0 +1,53 @@
+DATASET=["sample_1X"]
+a,b = DATASET[0].split("_")
+cov = int(b[0:-1])
+
+rule all :
+    input :        
+        expand("subsampling_{dataset}/fastqFile/{dataset}_{replicat}.fastq", dataset=DATASET, replicat=[1,2]),
+        #expand ("subsampling_{dataset}/canu/{dataset}_{replicat}/", dataset=DATASET, replicat=[1,2]),
+        "test.png"
+
+rule subsampling :
+        input : "sample_40X_1.bam"
+        output : "subsampling_{dataset}/bamFile/{dataset}_{replicat}.bam"
+        run :
+            from sequana import pacbio
+            b = pacbio.BAMPacbio(input[0])
+            b.random_selection(output_filename = output[0], reference_length=4086189, expected_coverage=cov)
+
+rule bam2fastq :
+        input : "subsampling_{dataset}/bamFile/{dataset}_{replicat}.bam"
+        output : "subsampling_{dataset}/fastqFile/{dataset}_{replicat}.fastq"
+        shell :  "bioconvert {input} {output}"
+
+rule assembly :
+        input : "subsampling_{dataset}/fastqFile/{dataset}_{replicat}.fastq"
+        output :  "subsampling_{dataset}/canu/{dataset}_{replicat}.contigs.fasta"
+        params :
+                prefix = "{dataset}_{replicat}",
+                genSize = "4086189",
+                techno = "-pacbio-raw"
+        shell : "canuu -d {params.prefix} -p {params.prefix} genomeSize={params.genSize} {params.techno} {output}"
+
+import glob
+def func(n):
+    files =  (glob.glob(n))
+    print (files)
+    return files
+
+rule plot :
+    input : func('subsampling_sample_1X/canu/*.contigs.fasta')
+    output : "test.png"
+    run : 
+        tab = []
+        from sequana import FastA
+        for n in input :
+            ff = FastA(n)
+            a = len(n)
+            tab.append(a)
+        with open("contigs.txt", "w") as fh:
+            fh.write(str(tab))
+        from pylab import hist, savefig
+        hist(tab)
+        savefig('test.png')

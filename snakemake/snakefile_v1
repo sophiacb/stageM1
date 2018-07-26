@@ -1,0 +1,8 @@
+SAMPLE=["sample_40X_"]
+rule all : 
+	input : expand("{sample}{replicat}.fasta", sample=SAMPLE, replicat=[1,2])
+
+rule fastq2fasta : 
+	input : "{sample}{replicat}.fastq"
+	output : "{sample}{replicat}.fasta"
+	shell :  "bioconvert {input} {output}"	
